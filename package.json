@@ -1,0 +1,138 @@
+{
+  "name": "mem9",
+  "version": "1.0.0",
+  "description": "Mem9 — LLM Memory Toolkit. Token estimation, adaptive compaction, quality safeguard, hybrid search, embedding providers, session management.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    },
+    "./token-estimator": {
+      "types": "./dist/token-estimator.d.ts",
+      "import": "./dist/token-estimator.js"
+    },
+    "./compaction": {
+      "types": "./dist/compaction.d.ts",
+      "import": "./dist/compaction.js"
+    },
+    "./quality-safeguard": {
+      "types": "./dist/quality-safeguard.d.ts",
+      "import": "./dist/quality-safeguard.js"
+    },
+    "./compaction-guardian": {
+      "types": "./dist/compaction-guardian.d.ts",
+      "import": "./dist/compaction-guardian.js"
+    },
+    "./context-window-guard": {
+      "types": "./dist/context-window-guard.d.ts",
+      "import": "./dist/context-window-guard.js"
+    },
+    "./bootstrap-budget": {
+      "types": "./dist/bootstrap-budget.d.ts",
+      "import": "./dist/bootstrap-budget.js"
+    },
+    "./text-chunker": {
+      "types": "./dist/text-chunker.d.ts",
+      "import": "./dist/text-chunker.js"
+    },
+    "./memory-search-config": {
+      "types": "./dist/memory-search-config.d.ts",
+      "import": "./dist/memory-search-config.js"
+    },
+    "./embedding-provider": {
+      "types": "./dist/embedding-provider.d.ts",
+      "import": "./dist/embedding-provider.js"
+    },
+    "./memory-store": {
+      "types": "./dist/memory-store.d.ts",
+      "import": "./dist/memory-store.js"
+    },
+    "./memory-cache": {
+      "types": "./dist/memory-cache.d.ts",
+      "import": "./dist/memory-cache.js"
+    },
+    "./memory-flush": {
+      "types": "./dist/memory-flush.d.ts",
+      "import": "./dist/memory-flush.js"
+    },
+    "./session-manager": {
+      "types": "./dist/session-manager.d.ts",
+      "import": "./dist/session-manager.js"
+    },
+    "./sqlite-memory-store": {
+      "types": "./dist/sqlite-memory-store.d.ts",
+      "import": "./dist/sqlite-memory-store.js"
+    }
+  },
+  "files": [
+    "dist/"
+  ],
+  "sideEffects": [
+    "*.ts"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:token": "node --import tsx --test test/token-estimator.test.ts",
+    "test:chunker": "node --import tsx --test test/text-chunker.test.ts",
+    "test:compaction": "node --import tsx --test test/compaction.test.ts",
+    "test:quality": "node --import tsx --test test/quality-safeguard.test.ts",
+    "test:store": "node --import tsx --test test/memory-store.test.ts",
+    "test:cache": "node --import tsx --test test/memory-cache.test.ts",
+    "test:e2e": "node --import tsx --test test/e2e.test.ts",
+    "bench": "node --import tsx benchmark/run.ts",
+    "prepublishOnly": "tsc",
+    "prepack": "tsc"
+  },
+  "keywords": [
+    "llm",
+    "memory",
+    "embedding",
+    "compaction",
+    "rag",
+    "agent",
+    "vector-search",
+    "bm25",
+    "token-estimation",
+    "cjk",
+    "conversation-compression",
+    "quality-safeguard"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ahua2020qq/mem9.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ahua2020qq/mem9/issues"
+  },
+  "homepage": "https://github.com/ahua2020qq/mem9#readme",
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.0"
+  },
+  "optionalDependencies": {
+    "openai": "^4.0.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": ">=9.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    }
+  }
+}

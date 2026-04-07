@@ -1,0 +1,12 @@
+# Source and development files
+src/
+test/
+benchmark/
+.github/
+tsconfig.json
+
+# Development dependencies
+node_modules/
+
+# Build artifacts (we ship dist/)
+*.tsbuildinfo
