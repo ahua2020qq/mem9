@@ -74,9 +74,7 @@
   "files": [
     "dist/"
   ],
-  "sideEffects": [
-    "*.ts"
-  ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
