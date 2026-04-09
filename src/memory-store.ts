@@ -112,47 +112,46 @@ export class MemoryStore {
       throw new ValidationError("MemoryEntry.embedding must be a number array", "embedding");
     }
 
-    // Serialize writes to prevent embedding cache race conditions
+    // Compute embedding outside lock — I/O bound, can run in parallel
+    const tokenCount = estimateTokens(entry.content);
+
+    if (this.chunkThreshold > 0 && tokenCount > this.chunkThreshold) {
+      // Chunked path: compute batch embeddings outside lock
+      return this.storeChunkedLocked(entry, signal);
+    }
+
+    // Single entry path: compute embedding outside lock
+    let embedding = entry.embedding;
+    if (embedding && embedding.some((v) => !Number.isFinite(v))) {
+      throw new ValidationError("Embedding vector contains NaN or Infinity", "embedding");
+    }
+    if (!embedding && this.provider) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      embedding = this.cache.getEmbedding(entry.content);
+      if (!embedding) {
+        embedding = await this.provider.embedQuery(entry.content);
+        this.cache.setEmbedding(entry.content, embedding);
+      }
+    }
+
+    // Only lock the memory write (microseconds)
     const prevLock = this.writeLock;
     let resolve!: () => void;
     this.writeLock = new Promise<void>((r) => { resolve = r; });
     try {
       await prevLock;
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-
-      const tokenCount = estimateTokens(entry.content);
-
-      // Auto-chunk if content exceeds threshold
-      if (this.chunkThreshold > 0 && tokenCount > this.chunkThreshold) {
-        return await this.storeChunked(entry, signal);
-      }
-
-      return await this.storeSingle(entry, undefined, signal);
+      return this.writeSingle(entry, embedding);
     } finally {
       resolve();
     }
   }
 
   /**
-   * Store a single (non-chunked) entry.
+   * Write a single entry to memory (must be called inside write lock).
    */
-  private async storeSingle(entry: MemoryEntry, parentDocId?: string, signal?: AbortSignal): Promise<string> {
+  private writeSingle(entry: MemoryEntry, embedding: number[] | undefined, parentDocId?: string): string {
     const id = `mem_${this.nextId++}`;
-
-    let embedding = entry.embedding;
-    if (embedding && embedding.some((v) => !Number.isFinite(v))) {
-      throw new ValidationError("Embedding vector contains NaN or Infinity", "embedding");
-    }
-    if (!embedding && this.provider) {
-      // Check cache first
-      embedding = this.cache.getEmbedding(entry.content);
-      if (!embedding) {
-        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        embedding = await this.provider.embedQuery(entry.content);
-        this.cache.setEmbedding(entry.content, embedding);
-      }
-    }
-
     const stored: StoredEntry = {
       id,
       content: entry.content,
@@ -171,40 +170,76 @@ export class MemoryStore {
   }
 
   /**
-   * Auto-chunk a large entry and store each chunk as a sub-entry.
-   * Returns a parent doc ID that can be used for bulk delete.
+   * Store a single (non-chunked) entry — kept for storeBatch internal use.
+   * Embedding must be pre-computed; only writes to memory.
    */
-  private async storeChunked(entry: MemoryEntry, signal?: AbortSignal): Promise<string> {
-    const parentId = `doc_${this.nextId++}`;
-    const chunks = chunkText(entry.content, this.chunkingOptions);
-    const childIds: string[] = [];
+  private writeSingleFromEntry(entry: MemoryEntry, parentDocId?: string): string {
+    const id = `mem_${this.nextId++}`;
+    const stored: StoredEntry = {
+      id,
+      content: entry.content,
+      embedding: entry.embedding,
+      metadata: entry.metadata,
+      createdAt: entry.metadata?.timestamp ?? Date.now(),
+      parentDocId,
+    };
 
-    // Batch-embed all chunks
-    let embeddings: number[][] | undefined;
+    this.entries.set(id, stored);
+    this.updateFTSIndex(id, entry.content);
+    this.cache.invalidateQueries();
+    this.evictIfNeeded();
+
+    return id;
+  }
+
+  /**
+   * Auto-chunk a large entry and store each chunk.
+   * Embeddings computed outside lock, memory writes inside lock.
+   */
+  private async storeChunkedLocked(entry: MemoryEntry, signal?: AbortSignal): Promise<string> {
+    const chunks = chunkText(entry.content, this.chunkingOptions);
+
+    // Batch-embed all chunks outside lock (I/O bound)
+    let embeddings: (number[] | undefined)[] | undefined;
     if (!entry.embedding && this.provider) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       const texts = chunks.map((c) => c.text);
-      embeddings = await this.provider.embedBatch(texts);
+      const batchResult = await this.provider.embedBatch(texts);
+      embeddings = batchResult;
     }
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const chunkEntry: MemoryEntry = {
-        content: chunk.text,
-        metadata: {
-          ...entry.metadata,
-          chunkIndex: i,
-          totalChunks: chunks.length,
-        },
-        embedding: entry.embedding ? undefined : embeddings?.[i],
-      };
+    // Lock only for memory writes
+    const prevLock = this.writeLock;
+    let resolve!: () => void;
+    this.writeLock = new Promise<void>((r) => { resolve = r; });
+    try {
+      await prevLock;
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
-      const childId = await this.storeSingle(chunkEntry, parentId, signal);
-      childIds.push(childId);
+      const parentId = `doc_${this.nextId++}`;
+      const childIds: string[] = [];
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const chunkEntry: MemoryEntry = {
+          content: chunk.text,
+          metadata: {
+            ...entry.metadata,
+            chunkIndex: i,
+            totalChunks: chunks.length,
+          },
+          embedding: entry.embedding ? undefined : embeddings?.[i],
+        };
+
+        const childId = this.writeSingleFromEntry(chunkEntry, parentId);
+        childIds.push(childId);
+      }
+
+      this.parentIndex.set(parentId, childIds);
+      return parentId;
+    } finally {
+      resolve();
     }
-
-    this.parentIndex.set(parentId, childIds);
-    return parentId;
   }
 
   /**
