@@ -6,3 +6,4 @@ Thumbs.db
 *.log
 coverage/
 .nyc_output/
+.npmrc
