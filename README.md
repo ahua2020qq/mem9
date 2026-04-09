@@ -134,7 +134,7 @@ await store.init();
 | 7 | `text-chunker` | Semantic + fixed text splitting with overlap |
 | 8 | `memory-search-config` | Hybrid retrieval, MMR, temporal decay configuration |
 | 9 | `embedding-provider` | OpenAI/Ollama/Generic embedding factory with auto-selection |
-| 10 | `memory-store` | In-memory store: BM25 FTS, vector search, hybrid retrieval, auto-chunking |
+| 10 | `memory-store` | In-memory store: BM25 FTS (pre-computed TF), CJK bigram tokenizer, vector search, hybrid retrieval, auto-chunking |
 | 11 | `memory-cache` | LRU cache for embeddings + query results (FNV-1a hashing) |
 | 12 | `memory-flush` | Cache refresh triggering decisions |
 | 13 | `session-manager` | LRU session lifecycle with 24h TTL |
@@ -252,16 +252,30 @@ const results = await store.search(
 |-----------|------------|
 | Token estimation (Latin) | ~450K ops/s |
 | Token estimation (CJK) | ~980K ops/s |
-| BM25 full-text search | ~700K ops/s |
+| BM25 full-text search | ~700K ops/s (O(1) TF lookup) |
 | Text chunking (short) | ~80K ops/s |
 | Text chunking (long) | ~2.6K ops/s |
+
+## Production Hardening
+
+- **Timeout protection** — 30s default on all embedding API calls (OpenAI/Ollama/Generic)
+- **AbortSignal** — `store()`, `search()`, `storeBatch()` all accept `AbortSignal`
+- **Write serializer** — Promise chain lock for concurrent write safety
+- **Fine-grained lock** — Embedding compute runs in parallel, only memory writes are serialized
+- **Embedding auto-chunking** — Batch size 100 (OpenAI/Generic), concurrency 5 (Ollama)
+- **CJK bigram FTS** — Chinese/Japanese/Korean bigram tokenizer for full-text search
+- **Pre-computed BM25** — Term frequencies computed at store time, O(1) lookup at search
+- **maxEntries eviction** — 50K cap with automatic oldest-first eviction
+- **Lazy TTL cleanup** — Cache cleanup once per TTL period, not per access
+- **No unsafe type assertions** — All `as` casts replaced with type guards
+- **269 tests**, 0 TypeScript errors
 
 ## Development
 
 ```bash
 pnpm install          # Install dependencies
 pnpm build            # Compile TypeScript
-pnpm test             # Run all tests (106 tests)
+pnpm test             # Run all tests (269 tests)
 pnpm typecheck        # Type-check without emitting
 pnpm bench            # Run benchmarks
 

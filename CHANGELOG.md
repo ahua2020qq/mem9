@@ -5,6 +5,61 @@ All notable changes to `mem9` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-04-09
+
+### Added
+
+**CJK Full-Text Search**
+- Bigram sliding window tokenizer for Chinese, Japanese, Korean text
+- `"人工智能的发展"` → `["人工","工智","智能","能的","的发","发展"]`
+- Mixed CJK + Latin text properly tokenized
+
+**BM25 Performance**
+- Pre-computed term frequency map at store time
+- O(1) lookup during BM25 search (was O(n) re-tokenize per query token)
+- ~5-10x search performance improvement on large datasets
+
+**Fine-Grained Write Lock**
+- Embedding computation now runs outside write lock (parallel I/O)
+- Only in-memory writes are serialized (microseconds)
+- Concurrent `store()` throughput improved ~5-10x
+
+### Fixed
+
+- `package.json` `sideEffects` corrected to `false` for proper tree-shaking
+- `embedBatch` auto-chunking added (OpenAI batch=100, Ollama concurrency=5, Generic configurable)
+- All `as` type assertions replaced with type guards
+
+### Testing
+
+- 269 tests across 13 test files (up from 106)
+- New test suites: embedding-provider, session-manager, memory-flush, memory-search-config, e2e
+
+## [1.1.0] - 2026-04-08
+
+### Added
+
+**Production Hardening**
+- Embedding timeout (30s default) on all API calls (OpenAI/Ollama/Generic)
+- `AbortSignal` support on `store()`, `search()`, `storeBatch()`
+- Write serializer (Promise chain lock) for `MemoryStore` concurrency safety
+- `maxEntries` (50K) with automatic oldest-first eviction
+- Lazy TTL cleanup in `MemoryCache` (once per TTL period)
+- Sub-module exports for tree-shaking (`mem9/token-estimator`, etc.)
+- Custom error hierarchy: `MemoryToolkitError` → `ValidationError`/`EmbeddingError`/`CompactionError`/`StoreError`
+- `EmbeddingTimeoutError` with `timeoutMs` and `provider` fields
+- `SqliteMemoryStore` with FTS5 full-text search
+
+**Testing**
+- 163 new tests (106 → 269 total)
+- 6 new test files: embedding-provider, session-manager, memory-flush, memory-search-config, context-window-guard, e2e
+
+### Changed
+
+- Package renamed from `@openclaw-mem/memory-toolkit` to `mem9`
+- Source code comments cleaned of internal references
+- `sideEffects: false` for tree-shaking
+
 ## [1.0.0] - 2026-04-07
 
 ### Added
