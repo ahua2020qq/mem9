@@ -71,6 +71,9 @@ export class MemoryStore {
   private totalDocCount = 0;
   private avgDocLength = 0;
 
+  // Pre-computed term frequencies: doc ID → (token → count)
+  private termFreqs = new Map<string, Map<string, number>>();
+
   // BM25 parameters
   private static readonly BM25_K1 = 1.2;
   private static readonly BM25_B = 0.75;
@@ -352,6 +355,7 @@ export class MemoryStore {
   clear(): void {
     this.entries.clear();
     this.ftsIndex.clear();
+    this.termFreqs.clear();
     this.parentIndex.clear();
     this.docLengths.clear();
     this.totalDocCount = 0;
@@ -445,10 +449,9 @@ export class MemoryStore {
         const entry = this.entries.get(id);
         if (!entry) continue;
 
-        // TF = count of token in document
-        const docTokens = this.tokenize(entry.content);
-        const tf = docTokens.filter((t) => t === token).length;
-        const docLen = this.docLengths.get(id) ?? docTokens.length;
+        // TF = pre-computed count (O(1) lookup)
+        const tf = this.termFreqs.get(id)?.get(token) ?? 0;
+        const docLen = this.docLengths.get(id) ?? 0;
 
         // BM25 score: IDF × (tf × (k1 + 1)) / (tf + k1 × (1 - b + b × dl/avgdl))
         const { BM25_K1: k1, BM25_B: b } = MemoryStore;
@@ -524,7 +527,15 @@ export class MemoryStore {
 
   private updateFTSIndex(id: string, content: string): void {
     const tokens = this.tokenize(content);
-    for (const token of tokens) {
+
+    // Pre-compute term frequency map
+    const freqs = new Map<string, number>();
+    for (const t of tokens) {
+      freqs.set(t, (freqs.get(t) ?? 0) + 1);
+    }
+    this.termFreqs.set(id, freqs);
+
+    for (const token of freqs.keys()) {
       let set = this.ftsIndex.get(token);
       if (!set) {
         set = new Set();
@@ -540,9 +551,12 @@ export class MemoryStore {
   }
 
   private removeFromFTSIndex(id: string, content: string): void {
-    const tokens = this.tokenize(content);
-    for (const token of tokens) {
-      this.ftsIndex.get(token)?.delete(id);
+    const freqs = this.termFreqs.get(id);
+    if (freqs) {
+      for (const token of freqs.keys()) {
+        this.ftsIndex.get(token)?.delete(id);
+      }
+      this.termFreqs.delete(id);
     }
 
     // BM25 stats
@@ -583,11 +597,27 @@ export class MemoryStore {
   }
 
   private tokenize(text: string): string[] {
-    return text
-      .toLowerCase()
-      .normalize("NFKC")
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((t) => t.length > 1);
+    const base = text.toLowerCase().normalize("NFKC");
+    const tokens: string[] = [];
+
+    // Latin / number words (length > 1)
+    for (const m of base.matchAll(/[a-z0-9]+/g)) {
+      if (m[0].length > 1) tokens.push(m[0]);
+    }
+
+    // CJK bigram: extract continuous CJK runs, then sliding window
+    for (const m of base.matchAll(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]+/g)) {
+      const run = m[0];
+      if (run.length === 1) {
+        tokens.push(run);
+      } else {
+        for (let i = 0; i < run.length - 1; i++) {
+          tokens.push(run.slice(i, i + 2));
+        }
+      }
+    }
+
+    return tokens;
   }
 
   private hashFilter(filter?: MemoryQuery["filter"]): string {
