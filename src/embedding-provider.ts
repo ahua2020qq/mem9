@@ -91,6 +91,7 @@ export async function createOpenAIEmbeddingProvider(
 
   const model = options.model ?? "text-embedding-3-small";
   const timeoutMs = options.timeoutMs ?? DEFAULT_EMBEDDING_TIMEOUT_MS;
+  const BATCH_SIZE = 100; // OpenAI recommended max per request
 
   return {
     id: "openai",
@@ -105,12 +106,26 @@ export async function createOpenAIEmbeddingProvider(
       return response.data[0].embedding;
     },
     embedBatch: async (texts: string[]) => {
-      const response = await withTimeout(
-        client.embeddings.create({ model, input: texts }),
-        timeoutMs,
-        "openai",
-      );
-      return response.data.map((item) => item.embedding);
+      if (texts.length <= BATCH_SIZE) {
+        const response = await withTimeout(
+          client.embeddings.create({ model, input: texts }),
+          timeoutMs,
+          "openai",
+        );
+        return response.data.map((item) => item.embedding);
+      }
+      // Auto-chunk for large batches
+      const results: number[][] = [];
+      for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+        const batch = texts.slice(i, i + BATCH_SIZE);
+        const response = await withTimeout(
+          client.embeddings.create({ model, input: batch }),
+          timeoutMs,
+          "openai",
+        );
+        results.push(...response.data.map((d) => d.embedding));
+      }
+      return results;
     },
   };
 }
@@ -152,7 +167,17 @@ export async function createOllamaEmbeddingProvider(
     model,
     embedQuery: embed,
     embedBatch: async (texts: string[]) => {
-      return Promise.all(texts.map(embed));
+      // Concurrency control — avoid flooding Ollama with thousands of requests
+      const CONCURRENCY = 5;
+      const results: number[][] = new Array(texts.length);
+      for (let i = 0; i < texts.length; i += CONCURRENCY) {
+        const batch = texts.slice(i, i + CONCURRENCY);
+        const embeddings = await Promise.all(batch.map(embed));
+        for (let j = 0; j < embeddings.length; j++) {
+          results[i + j] = embeddings[j];
+        }
+      }
+      return results;
     },
   };
 }
@@ -171,8 +196,9 @@ export function createGenericEmbeddingProvider(params: {
   headers?: Record<string, string>;
   maxInputTokens?: number;
   timeoutMs?: number;
+  batchSize?: number;
 }): EmbeddingProvider {
-  const { id, model, baseUrl, apiKey, headers = {}, maxInputTokens, timeoutMs = DEFAULT_EMBEDDING_TIMEOUT_MS } = params;
+  const { id, model, baseUrl, apiKey, headers = {}, maxInputTokens, timeoutMs = DEFAULT_EMBEDDING_TIMEOUT_MS, batchSize = 100 } = params;
 
   const authHeaders: Record<string, string> = {
     "Content-Type": "application/json",
@@ -205,20 +231,42 @@ export function createGenericEmbeddingProvider(params: {
     maxInputTokens,
     embedQuery: embed,
     embedBatch: async (texts: string[]) => {
-      const response = await withTimeout(
-        fetch(`${baseUrl}/embeddings`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({ model, input: texts }),
-        }),
-        timeoutMs,
-        id,
-      );
-      if (!response.ok) {
-        throw new EmbeddingError(`Embedding API failed: ${response.status} ${response.statusText}`, id);
+      if (texts.length <= batchSize) {
+        const response = await withTimeout(
+          fetch(`${baseUrl}/embeddings`, {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({ model, input: texts }),
+          }),
+          timeoutMs,
+          id,
+        );
+        if (!response.ok) {
+          throw new EmbeddingError(`Embedding API failed: ${response.status} ${response.statusText}`, id);
+        }
+        const data = await response.json() as { data: Array<{ embedding: number[] }> };
+        return data.data.map((item) => item.embedding);
       }
-      const data = await response.json() as { data: Array<{ embedding: number[] }> };
-      return data.data.map((item) => item.embedding);
+      // Auto-chunk for large batches
+      const results: number[][] = [];
+      for (let i = 0; i < texts.length; i += batchSize) {
+        const batch = texts.slice(i, i + batchSize);
+        const response = await withTimeout(
+          fetch(`${baseUrl}/embeddings`, {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({ model, input: batch }),
+          }),
+          timeoutMs,
+          id,
+        );
+        if (!response.ok) {
+          throw new EmbeddingError(`Embedding API failed: ${response.status} ${response.statusText}`, id);
+        }
+        const data = await response.json() as { data: Array<{ embedding: number[] }> };
+        results.push(...data.data.map((d) => d.embedding));
+      }
+      return results;
     },
   };
 }
