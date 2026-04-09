@@ -10,10 +10,23 @@
 
 ## Installation
 
+### npm (when available)
 ```bash
 npm install mem9
-# or
-pnpm add mem9
+```
+
+### GitHub Packages
+```bash
+# 1. Create .npmrc in your project
+echo "@ahua2020qq:registry=https://npm.pkg.github.com" > .npmrc
+
+# 2. Install
+pnpm add @ahua2020qq/mem9
+```
+
+### Direct from GitHub (no registry needed)
+```bash
+pnpm add github:ahua2020qq/mem9
 ```
 
 Optional dependencies:
@@ -143,12 +156,15 @@ await store.init();
 Import individual modules for tree-shaking:
 
 ```ts
-// Full import
+// Full import (from npm)
 import { MemoryStore, estimateTokens } from "mem9";
 
+// Full import (from GitHub Packages)
+import { MemoryStore, estimateTokens } from "@ahua2020qq/mem9";
+
 // Sub-module import (better tree-shaking)
-import { MemoryStore } from "mem9/memory-store";
-import { estimateTokens } from "mem9/token-estimator";
+import { MemoryStore } from "@ahua2020qq/mem9/memory-store";
+import { estimateTokens } from "@ahua2020qq/mem9/token-estimator";
 ```
 
 ## API Reference

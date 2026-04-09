@@ -1,6 +1,6 @@
 {
-  "name": "mem9",
-  "version": "1.0.0",
+  "name": "@ahua2020qq/mem9",
+  "version": "1.2.0",
   "description": "Mem9 — LLM Memory Toolkit. Token estimation, adaptive compaction, quality safeguard, hybrid search, embedding providers, session management.",
   "type": "module",
   "main": "dist/index.js",
@@ -106,6 +106,9 @@
     "quality-safeguard"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
